@@ -20,7 +20,7 @@
 #define OFFSET_BITS 8
 #define OFFSET_MASK 255
 
-#define MEMORY_SIZE PAGES * PAGE_SIZE
+#define MEMORY_SIZE 256 * PAGE_SIZE
 
 // Max number of characters per line of input file to read.
 #define BUFFER_SIZE 10
@@ -38,8 +38,8 @@ int tlbindex = 0;
 // pagetable[logical_page] is the physical page number for logical page. Value is -1 if that logical page isn't yet in the table.
 int pagetable[PAGES];
 int lru_tracker[PAGES];//this is to track when each page is accessed
-int time =0; //initially zero, increases each time there is an access and used to keep track of lru info
-
+int counter =0; //initially zero, increases each time there is an access and used to keep track of lru info
+int fifo_ptr = 0;
 signed char main_memory[MEMORY_SIZE];
 
 // Pointer to memory mapped backing file
@@ -51,11 +51,19 @@ int max(int a, int b)
     return a;
   return b;
 }
+int min(int a, int b)
+{
+  if (a < b)
+    return a;
+  return b;
+}
 int search_table(int ad){
+
   for(int i = 0; i<PAGES; i++){
     if(pagetable[i] ==  ad)
       return i;
   }
+
   return -1;
 }
 
@@ -83,7 +91,7 @@ void add_to_tlb(unsigned char logical, unsigned char physical) {
 
 int main(int argc, const char *argv[])
 {
-  if (argc != 3) {
+  if (argc != 5) {
     fprintf(stderr, "Usage ./virtmem backingstore input\n");
     exit(1);
   }
@@ -99,6 +107,7 @@ int main(int argc, const char *argv[])
   int i;
   for (i = 0; i < PAGES; i++) {
     pagetable[i] = -1;
+    lru_tracker[i]=-1;
   }
 
   // Character buffer for reading lines of input file.
@@ -112,8 +121,10 @@ int main(int argc, const char *argv[])
   // Number of the next unallocated physical page in main memory
   unsigned char free_page = 0;
 
+  int dir = atoi(argv[4]); //dir =0 fifo =1 lru
   while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
     total_addresses++;
+    counter++;
     int logical_address = atoi(buffer);
     int offset = logical_address & OFFSET_MASK;
     int logical_page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
@@ -124,25 +135,50 @@ int main(int argc, const char *argv[])
       tlb_hits++;
       // TLB miss
     } else {
-      physical_page = pagetable[logical_page];
-
+      physical_page = search_table(logical_page);
       // Page fault
       if (physical_page == -1) {
 	page_faults++;
 
-	physical_page = free_page;
-	free_page++;
+	physical_page = search_table(-1);
+  if (physical_page == -1){ //free slot not found
+
+    if(dir == 0){
+
+      physical_page=(fifo_ptr%PAGES);
+
+      fifo_ptr++;
+    }else if(dir == 1){
+      int comp = 100000000;
+
+      for(int i =0; i<PAGES; i++){
+        comp=min(comp, lru_tracker[i]);
+        if (comp==lru_tracker[i]){ // if the slot is indeed min
+          physical_page=i;
+        }
+      }
+
+    }else{
+      printf("Error in direction\n" );
+    }
+
+  }
+
+
   // printf("Free page is %d\n",free_page );
+  printf("Came this far\n");
+
 
 	// Copy page from backing file into physical memory
 	memcpy(main_memory + physical_page * PAGE_SIZE, backing + logical_page * PAGE_SIZE, PAGE_SIZE);
 
-	pagetable[logical_page] = physical_page;
-      }
+    	pagetable[physical_page] = logical_page;      }
 
       add_to_tlb(logical_page, physical_page);
     }
 
+
+    lru_tracker[physical_page]=counter;
     int physical_address = (physical_page << OFFSET_BITS) | offset;
     signed char value = main_memory[physical_page * PAGE_SIZE + offset];
 
