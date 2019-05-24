@@ -38,7 +38,6 @@ int tlbindex = 0;
 // pagetable[logical_page] is the physical page number for logical page. Value is -1 if that logical page isn't yet in the table.
 int pagetable[PAGES];
 int lru_tracker[PAGES];//this is to track when each page is accessed
-int counter =0; //initially zero, increases each time there is an access and used to keep track of lru info
 int fifo_ptr = 0;
 signed char main_memory[MEMORY_SIZE];
 
@@ -53,7 +52,7 @@ int max(int a, int b)
 }
 int min(int a, int b)
 {
-  if (a < b)
+  if (a <= b)
     return a;
   return b;
 }
@@ -124,7 +123,6 @@ int main(int argc, const char *argv[])
   int dir = atoi(argv[4]); //dir =0 fifo =1 lru
   while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
     total_addresses++;
-    counter++;
     int logical_address = atoi(buffer);
     int offset = logical_address & OFFSET_MASK;
     int logical_page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
@@ -149,12 +147,14 @@ int main(int argc, const char *argv[])
 
       fifo_ptr++;
     }else if(dir == 1){
-      int comp = 100000000;
+      int comp = 1000000;
 
       for(int i =0; i<PAGES; i++){
-        comp=min(comp, lru_tracker[i]);
+        // printf("index : %d, tracker: %d \t", i, lru_tracker[i]);
+        comp=min(comp,lru_tracker[i]);
         if (comp==lru_tracker[i]){ // if the slot is indeed min
           physical_page=i;
+
         }
       }
 
@@ -166,19 +166,23 @@ int main(int argc, const char *argv[])
 
 
   // printf("Free page is %d\n",free_page );
-  printf("Came this far\n");
+  // printf("Came this far\n");
 
 
 	// Copy page from backing file into physical memory
 	memcpy(main_memory + physical_page * PAGE_SIZE, backing + logical_page * PAGE_SIZE, PAGE_SIZE);
 
-    	pagetable[physical_page] = logical_page;      }
+    	pagetable[physical_page] = logical_page;
+      }
+
 
       add_to_tlb(logical_page, physical_page);
     }
 
 
-    lru_tracker[physical_page]=counter;
+    lru_tracker[physical_page]=total_addresses;
+    // printf("Phsical Page used is %d \n", physical_page);
+
     int physical_address = (physical_page << OFFSET_BITS) | offset;
     signed char value = main_memory[physical_page * PAGE_SIZE + offset];
 
