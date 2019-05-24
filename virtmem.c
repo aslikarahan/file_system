@@ -13,14 +13,14 @@
 #include <string.h>
 
 #define TLB_SIZE 16
-#define PAGES 64
+#define PAGES 64 //new page count, used to be 256
 #define PAGE_MASK 255
 
 #define PAGE_SIZE 256
 #define OFFSET_BITS 8
 #define OFFSET_MASK 255
 
-#define MEMORY_SIZE 256 * PAGE_SIZE
+#define MEMORY_SIZE 256 * PAGE_SIZE //had to use 256 instead of 64 because otherwise got a segmentation fault error
 
 // Max number of characters per line of input file to read.
 #define BUFFER_SIZE 10
@@ -37,8 +37,8 @@ int tlbindex = 0;
 
 // pagetable[logical_page] is the physical page number for logical page. Value is -1 if that logical page isn't yet in the table.
 int pagetable[PAGES];
-int lru_tracker[PAGES];//this is to track when each page is accessed
-int fifo_ptr = 0;
+int lru_tracker[PAGES]; //this is to track when each page is accessed, the index are the pages and the values are updated at each access
+int fifo_ptr = 0; //this is for the fifo implementation, it is a pointer to the oldest element's index and incremented only when the oldest is replaced, leaving the next one to be oldest
 signed char main_memory[MEMORY_SIZE];
 
 // Pointer to memory mapped backing file
@@ -50,20 +50,18 @@ int max(int a, int b)
     return a;
   return b;
 }
-int min(int a, int b)
+int min(int a, int b)//wrote a min function as a modified version of the above max, out lru implementation required the minimum to be found
 {
   if (a <= b)
     return a;
   return b;
 }
-int search_table(int ad){
-
+int search_table(int ad){//this function looks through the page table to find the index(which corresponds to the physical address) of the given logical address
   for(int i = 0; i<PAGES; i++){
     if(pagetable[i] ==  ad)
-      return i;
+      return i; //as soon as there is a logical address match, no need to keep looking, just return
   }
-
-  return -1;
+  return -1;//logical address is not in the page table, means page fault
 }
 
 /* Returns the physical address from TLB or -1 if not present. */
@@ -90,7 +88,7 @@ void add_to_tlb(unsigned char logical, unsigned char physical) {
 
 int main(int argc, const char *argv[])
 {
-  if (argc != 5) {
+  if (argc != 5) { // -p and the number add two more arguments, making argc 5
     fprintf(stderr, "Usage ./virtmem backingstore input\n");
     exit(1);
   }
@@ -120,9 +118,9 @@ int main(int argc, const char *argv[])
   // Number of the next unallocated physical page in main memory
   unsigned char free_page = 0;
 
-  int dir = atoi(argv[4]); //dir =0 fifo =1 lru
+  int dir = atoi(argv[4]); //dir =0 fifo dir=1 lru
   while (fgets(buffer, BUFFER_SIZE, input_fp) != NULL) {
-    total_addresses++;
+    total_addresses++;//used this as a clock to keep track of when each element are accessed
     int logical_address = atoi(buffer);
     int offset = logical_address & OFFSET_MASK;
     int logical_page = (logical_address >> OFFSET_BITS) & PAGE_MASK;
@@ -133,27 +131,27 @@ int main(int argc, const char *argv[])
       tlb_hits++;
       // TLB miss
     } else {
-      physical_page = search_table(logical_page);
+      physical_page = search_table(logical_page); //looking for the physical address(index) of the given logical address
       // Page fault
       if (physical_page == -1) {
 	page_faults++;
 
-	physical_page = search_table(-1);
-  if (physical_page == -1){ //free slot not found
+	physical_page = search_table(-1);//looking for the physical address of an empty slot which has -1 as value
+  if (physical_page == -1){ //free slot not found, need to replace some pages
 
-    if(dir == 0){
+    if(dir == 0){//fifo replacement
 
-      physical_page=(fifo_ptr%PAGES);
+      physical_page=(fifo_ptr%PAGES);//modulo for circular kkeping track of the oldest element
 
-      fifo_ptr++;
-    }else if(dir == 1){
-      int comp = 1000000;
+      fifo_ptr++;//now that the oldest element has been replaced, the oldest is the next element
+    }else if(dir == 1){//lru replacement
+      int comp = 1000000;//random maximum value
 
-      for(int i =0; i<PAGES; i++){
+      for(int i =0; i<PAGES; i++){ //iterating over all the addresses to find the least recently used page
         // printf("index : %d, tracker: %d \t", i, lru_tracker[i]);
-        comp=min(comp,lru_tracker[i]);
-        if (comp==lru_tracker[i]){ // if the slot is indeed min
-          physical_page=i;
+        comp=min(comp,lru_tracker[i]);//when elements are accessed, the ever increasing time is recorded in lru_tracker, the minimum value element is the least recently used
+        if (comp==lru_tracker[i]){ // if the slot is indeed min, get the index
+          physical_page=i;//the index of the least recently used element
 
         }
       }
@@ -180,7 +178,7 @@ int main(int argc, const char *argv[])
     }
 
 
-    lru_tracker[physical_page]=total_addresses;
+    lru_tracker[physical_page]=total_addresses;//each access time is recorded within the while loop, whether it is from the tlb or not
     // printf("Phsical Page used is %d \n", physical_page);
 
     int physical_address = (physical_page << OFFSET_BITS) | offset;
